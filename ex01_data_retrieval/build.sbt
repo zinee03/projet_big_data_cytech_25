@@ -8,9 +8,9 @@ lazy val root = (project in file("."))
   )
 
 // https://mvnrepository.com/artifact/org.apache.spark/spark-core
-libraryDependencies += "org.apache.spark" %% "spark-core" % "3.5.5"
+libraryDependencies += "org.apache.spark" %% "spark-core" % "3.5.0" % "provided"
 // https://mvnrepository.com/artifact/org.apache.spark/spark-sql
-libraryDependencies += "org.apache.spark" %% "spark-sql" % "3.5.5"
+libraryDependencies += "org.apache.spark" %% "spark-sql" % "3.5.0" % "provided"
 // https://mvnrepository.com/artifact/org.apache.hadoop/hadoop-aws
 libraryDependencies += "org.apache.hadoop" % "hadoop-aws" % "3.3.4"
 libraryDependencies += "com.amazonaws" % "aws-java-sdk-bundle" % "1.12.262"
