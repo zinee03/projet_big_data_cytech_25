@@ -56,3 +56,5 @@ hadoop
 data/
 target/
 .bsp/
+minio-data/
+postgres-data/
