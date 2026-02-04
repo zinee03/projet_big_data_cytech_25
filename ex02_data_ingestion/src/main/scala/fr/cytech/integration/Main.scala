@@ -1,76 +1,99 @@
 package fr.cytech.integration
 
-import org.apache.spark.sql.{SparkSession, SaveMode}
+import org.apache.spark.sql.{SaveMode, SparkSession}
 import org.apache.spark.sql.functions._
 import java.util.Properties
 
 object Main {
   def main(args: Array[String]): Unit = {
-    // 1. Correction Windows
+
+    // 1. Config Windows (Obligatoire)
     System.setProperty("hadoop.home.dir", "C:\\hadoop")
 
     val spark = SparkSession.builder()
-      .appName("Ex02 - Data Cleaning and Ingestion")
+      .appName("Ex02_Ingestion_Finale")
       .master("local[*]")
+      // --- Optimisation Windows ---
+      .config("spark.hadoop.mapreduce.fileoutputcommitter.algorithm.version", "2")
+      .config("spark.hadoop.fs.file.impl", "org.apache.hadoop.fs.LocalFileSystem")
+      // --- Config MinIO ---
+      .config("spark.hadoop.fs.s3a.endpoint", "http://localhost:9000")
+      .config("spark.hadoop.fs.s3a.access.key", "minio")
+      .config("spark.hadoop.fs.s3a.secret.key", "minio123")
+      .config("spark.hadoop.fs.s3a.path.style.access", "true")
+      .config("spark.hadoop.fs.s3a.impl", "org.apache.hadoop.fs.s3a.S3AFileSystem")
+      .config("spark.hadoop.fs.s3a.connection.ssl.enabled", "false")
       .getOrCreate()
 
-    // 2. Configuration MinIO
-    val sc = spark.sparkContext
-    sc.hadoopConfiguration.set("fs.s3a.endpoint", "http://127.0.0.1:9000")
-    sc.hadoopConfiguration.set("fs.s3a.access.key", "minio")
-    sc.hadoopConfiguration.set("fs.s3a.secret.key", "minio123")
-    sc.hadoopConfiguration.set("fs.s3a.path.style.access", "true")
-    sc.hadoopConfiguration.set("fs.s3a.impl", "org.apache.hadoop.fs.s3a.S3AFileSystem")
-    sc.hadoopConfiguration.set("fs.s3a.fast.upload", "true")
-    sc.hadoopConfiguration.set("fs.s3a.fast.upload.buffer", "array")
-
-    println("Démarrage du pipeline de données...")
+    println("--- Démarrage de l'Ingestion ---")
 
     try {
-      // 3. Lecture depuis nyc-raw
-      val df = spark.read.parquet("s3a://nyc-raw/yellow_tripdata_2024-01.parquet")
+      // 2. Lecture
+      val rawDf = spark.read.parquet("s3a://nyc-raw/yellow_tripdata_2024-01.parquet")
 
-      // 4. Nettoyage : filtrer les données selon le contrat [cite: 44]
-      // Nettoyage plus strict : on enlève les prix/distances <= 0 ET les valeurs nulles
-      val cleanDf = df.filter(
-        col("total_amount") > 0 &&
-          col("trip_distance") > 0 &&
-          col("passenger_count").isNotNull &&
-          col("PULocationID").isNotNull &&
-          col("DOLocationID").isNotNull
-      )
+      // 3. Nettoyage et Renommage (Adapté à la nouvelle table SQL)
+      val cleanDf = rawDf
+        .withColumnRenamed("VendorID", "vendor_id")
+        .withColumnRenamed("tpep_pickup_datetime", "pickup_datetime")
+        .withColumnRenamed("tpep_dropoff_datetime", "dropoff_datetime") // On le garde cette fois !
+        .withColumnRenamed("RatecodeID", "rate_code_id")
+        .withColumnRenamed("PULocationID", "pickup_location_id")
+        .withColumnRenamed("DOLocationID", "dropoff_location_id")
+        .withColumnRenamed("payment_type", "payment_type_id")
+        .filter(col("total_amount") > 0 && col("trip_distance") > 0)
+        .select(
+          col("vendor_id").cast("int"),
+          col("rate_code_id").cast("int"),
+          col("payment_type_id").cast("int"),
+          col("pickup_location_id").cast("int"),
+          col("dropoff_location_id").cast("int"),
+          col("pickup_datetime"),
+          col("dropoff_datetime"), // Incluse dans la nouvelle table
+          col("passenger_count").cast("int"),
+          col("trip_distance"),
+          col("fare_amount"),
+          col("extra"),
+          col("mta_tax"),
+          col("tip_amount"),
+          col("tolls_amount"),
+          col("improvement_surcharge"),
+          col("total_amount"),
+          col("congestion_surcharge")
+        )
 
-      val rowCount = cleanDf.count()
-      println(s"Nombre de lignes valides : $rowCount")
+      val count = cleanDf.count()
+      println(s"--- Lignes prêtes : $count ---")
 
-      if (rowCount == 0) {
-        println("ATTENTION : Aucune donnée ne correspond aux filtres. Le fichier sera vide.")
-      } else {
-        // --- BRANCHE 1 : Sauvegarde sur MinIO pour le ML [cite: 45, 53] ---
-        println("Branche 1 : Envoi vers le bucket nyc-processed...")
-        cleanDf.write
-          .mode(SaveMode.Overwrite)
-          .parquet("s3a://nyc-processed/yellow_tripdata_2024-01_clean.parquet")
+      if (count > 0) {
+        // Branche 1 : MinIO
+        println(">>> Écriture MinIO...")
+        cleanDf.write.mode(SaveMode.Overwrite).parquet("s3a://nyc-processed/yellow_tripdata_2024-01_clean.parquet")
+        println("✅ MinIO : OK")
 
-        // --- BRANCHE 2 : Ingestion PostgreSQL (Data Warehouse) [cite: 48, 49, 55] ---
-        println("Branche 2 : Ingestion vers PostgreSQL...")
+        // Branche 2 : Postgres
+        println(">>> Ingestion PostgreSQL...")
 
-        val jdbcUrl = "jdbc:postgresql://localhost:5432/nyc_db"
-        val connectionProperties = new Properties()
-        connectionProperties.put("user", "postgres")
-        connectionProperties.put("password", "postgres")
-        connectionProperties.put("driver", "org.postgresql.Driver")
+        // --- CONFIGURATION CRITIQUE ---
+        // On essaie d'abord 'password'. Si ça rate, change ici pour 'toto'.
+        val dbPassword = "password"
 
-        // La table 'trips' doit être créée via l'exercice 3 au préalable [cite: 49, 65]
+        val jdbcUrl = "jdbc:postgresql://localhost:5432/taxi_warehouse"
+        val props = new Properties()
+        props.put("user", "admin")
+        props.put("password", dbPassword)
+        props.put("driver", "org.postgresql.Driver")
+
         cleanDf.write
           .mode(SaveMode.Append)
-          .jdbc(jdbcUrl, "trips", connectionProperties)
+          .jdbc(jdbcUrl, "fact_trips", props) // Table en minuscule
 
-        println("Exercice 2 : Ingestion multi-branche terminée avec succès !")
+        println("✅ PostgreSQL : Données insérées avec succès !")
       }
 
     } catch {
-      case e: Exception => println(s"Erreur critique : ${e.getMessage}")
+      case e: Exception =>
+        println(s"❌ ERREUR : ${e.getMessage}")
+        e.printStackTrace()
     } finally {
       spark.stop()
     }
