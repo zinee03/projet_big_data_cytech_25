@@ -68,7 +68,7 @@ object Main {
         // Branche 1 : MinIO
         println(">>> Écriture MinIO...")
         cleanDf.write.mode(SaveMode.Overwrite).parquet("s3a://nyc-processed/yellow_tripdata_2024-01_clean.parquet")
-        println("✅ MinIO : OK")
+        println(" MinIO : OK")
 
         // Branche 2 : Postgres
         println(">>> Ingestion PostgreSQL...")
@@ -87,12 +87,12 @@ object Main {
           .mode(SaveMode.Append)
           .jdbc(jdbcUrl, "fact_trips", props) // Table en minuscule
 
-        println("✅ PostgreSQL : Données insérées avec succès !")
+        println(" PostgreSQL : Données insérées avec succès !")
       }
 
     } catch {
       case e: Exception =>
-        println(s"❌ ERREUR : ${e.getMessage}")
+        println(s" ERREUR : ${e.getMessage}")
         e.printStackTrace()
     } finally {
       spark.stop()

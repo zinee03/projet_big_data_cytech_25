@@ -24,5 +24,3 @@ INSERT INTO Dim_PaymentType (payment_type_id, payment_description) VALUES
                                                                        (5, 'Unknown'),
                                                                        (6, 'Voided trip');
 
--- Note : Dim_Location et Dim_Time seront remplies dynamiquement par ton code Spark (Exo 2/3)
--- car elles contiennent trop de données pour être tapées à la main ici.
