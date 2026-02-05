@@ -11,7 +11,7 @@ st.markdown("Ce tableau de bord est connecté directement au Data Warehouse Post
 
 # 2. Connexion à la Base de Données
 # Port 5432, User admin, Mdp toto, Base taxi_warehouse
-DB_URI = "postgresql+psycopg2://admin:toto@localhost:5432/taxi_warehouse"
+DB_URI = "postgresql+psycopg2://admin:password@localhost:5432/taxi_warehouse"
 
 
 @st.cache_data(ttl=600)  # Mise en cache 10 min pour la performance
