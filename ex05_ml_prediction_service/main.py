@@ -19,6 +19,7 @@ def load_data():
         "secret": "minio123",
         "client_kwargs": {"endpoint_url": "http://localhost:9000"}
     }
+    # On lit le fichier CLEAN généré par Spark
     path = "s3://nyc-processed/yellow_tripdata_2024-01_clean.parquet"
     return pd.read_parquet(path, storage_options=storage_options)
 
@@ -41,17 +42,26 @@ def preprocess_data(df):
     """
     # Nettoyage des valeurs manquantes
     cols_clean = ['total_amount', 'trip_distance', 'passenger_count']
-    df = df.dropna(subset=cols_clean)
+    df = df.dropna(subset=cols_clean).copy()
 
-    # Feature engineering
-    df['tpep_pickup_datetime'] = pd.to_datetime(df['tpep_pickup_datetime'])
-    df['hour'] = df['tpep_pickup_datetime'].dt.hour
+    # Feature engineering (Utilisation des NOUVEAUX noms de colonnes)
+    # 'tpep_pickup_datetime' est devenu 'pickup_datetime' dans le fichier clean
+    df['pickup_datetime'] = pd.to_datetime(df['pickup_datetime'])
+    df['hour'] = df['pickup_datetime'].dt.hour
 
+    # Sélection des features avec les bons noms
+    # PULocationID -> pickup_location_id
+    # DOLocationID -> dropoff_location_id
     features = [
         'trip_distance', 'passenger_count', 'hour',
-        'PULocationID', 'DOLocationID'
+        'pickup_location_id', 'dropoff_location_id'
     ]
-    return df[features], df['total_amount']
+
+    # On vérifie que les colonnes existent avant de retourner
+    # (Sécurité au cas où Spark n'aurait pas tout renommé comme prévu)
+    available_features = [f for f in features if f in df.columns]
+
+    return df[available_features], df['total_amount']
 
 
 def train_model(X, y):
@@ -70,8 +80,9 @@ def train_model(X, y):
     model : GradientBoostingRegressor
         Le modèle entraîné.
     """
+    # On utilise moins d'estimateurs pour que ça tourne vite sur ton PC
     model = GradientBoostingRegressor(
-        n_estimators=100, max_depth=5, random_state=42
+        n_estimators=50, max_depth=5, random_state=42
     )
     model.fit(X, y)
     return model
@@ -97,19 +108,31 @@ def make_prediction(model, data):
 
 
 if __name__ == "__main__":
-    # Pipeline principal
+    print("--- Démarrage du ML Service ---")
+
+    # 1. Chargement
+    print("Chargement des données depuis MinIO...")
     raw_df = load_data()
+    print(f"Données chargées : {raw_df.shape}")
+
+    # 2. Préparation
+    print("Préparation des features...")
     X, y = preprocess_data(raw_df)
 
-    # Split des données (ligne coupée pour PEP 8)
+    # 3. Split des données
     X_train, X_test, y_train, y_test = train_test_split(
         X, y, test_size=0.2, random_state=42
     )
 
+    # 4. Entraînement
+    print("Entraînement du modèle (Gradient Boosting)...")
     trained_model = train_model(X_train, y_train)
 
-    # Évaluation
+    # 5. Évaluation
+    print("Évaluation du modèle...")
     predictions = make_prediction(trained_model, X_test)
     rmse = np.sqrt(mean_squared_error(y_test, predictions))
-    # Double espace avant le commentaire ci-dessous pour E261
-    print(f"Modèle prêt ! RMSE obtenu : {rmse:.2f}")  # Objectif < 10
+
+    print("-" * 30)
+    print(f" Modèle prêt ! RMSE obtenu : {rmse:.2f}")  # Objectif < 10
+    print("-" * 30)
