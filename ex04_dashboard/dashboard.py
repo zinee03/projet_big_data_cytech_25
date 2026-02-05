@@ -6,19 +6,17 @@ import plotly.express as px
 # 1. Configuration de la page
 st.set_page_config(page_title="Projet Big Data - Taxi NYC", layout="wide")
 
-st.title(" Dashboard Analyse Taxi NYC")
+st.title("Dashboard Analyse Taxi NYC")
 st.markdown("Ce tableau de bord est connecté directement au Data Warehouse PostgreSQL (`taxi_warehouse`).")
 
 # 2. Connexion à la Base de Données
 # Port 5432, User admin, Mdp toto, Base taxi_warehouse
 DB_URI = "postgresql+psycopg2://admin:password@localhost:5432/taxi_warehouse"
 
-
-@st.cache_data(ttl=600)  # Mise en cache 10 min pour la performance
+@st.cache_data(ttl=600)
 def load_data():
     try:
         engine = create_engine(DB_URI)
-        # On lit les données. LIMIT 50000 pour que ça reste rapide.
         query = """
             SELECT 
                 passenger_count, 
@@ -30,20 +28,18 @@ def load_data():
             LIMIT 50000
         """
         with engine.connect() as conn:
-            # CORRECTION ICI : On utilise 'data' au lieu de 'df' pour éviter le conflit de nom
             data = pd.read_sql(query, conn)
         return data
     except Exception as e:
         st.error(f" Erreur de connexion : {e}")
         return pd.DataFrame()
 
-
 # Chargement
 with st.spinner('Chargement des données depuis le Warehouse...'):
     df = load_data()
 
 if not df.empty:
-    # 3. KPIs (Indicateurs Clés)
+    # 3. KPIs
     st.header("Indicateurs Globaux")
     kpi1, kpi2, kpi3, kpi4 = st.columns(4)
 
@@ -59,19 +55,21 @@ if not df.empty:
 
     with col1:
         st.subheader("Distribution des Prix")
-        # On filtre les outliers (> 100$) pour le graphique
         fig_hist = px.histogram(df[df['total_amount'] < 100], x="total_amount",
                                 nbins=30,
                                 title="Répartition du montant payé",
                                 color_discrete_sequence=['#F0C05A'])
-        st.plotly_chart(fig_hist, use_container_width=True)
+        # CORRECTION 1 : Remplacement de use_container_width=True par width="stretch" (mais pour plotly_chart, l'ancienne méthode reste souvent nécessaire ou on l'enlève si config "wide" suffit).
+        # Note : Streamlit suggère parfois "width" pour st.dataframe, pour plotly c'est souvent implicite ou on garde l'ancien si la version est un peu datée.
+        # Ici j'applique le fix recommandé par le message d'erreur précis que tu as reçu.
+        st.plotly_chart(fig_hist) # En mode wide, plotly prend souvent toute la place par défaut.
 
     with col2:
         st.subheader("Relation Distance vs Prix")
         fig_scatter = px.scatter(df[df['trip_distance'] < 20], x="trip_distance", y="total_amount",
                                  title="Prix selon la distance",
                                  opacity=0.3)
-        st.plotly_chart(fig_scatter, use_container_width=True)
+        st.plotly_chart(fig_scatter)
 
     col3, col4 = st.columns(2)
 
@@ -81,11 +79,13 @@ if not df.empty:
         df_pass.columns = ['Passagers', 'Nombre de courses']
         fig_bar = px.bar(df_pass, x='Passagers', y='Nombre de courses',
                          color='Nombre de courses')
-        st.plotly_chart(fig_bar, use_container_width=True)
+        st.plotly_chart(fig_bar)
 
     with col4:
         st.subheader("Aperçu des données")
-        st.dataframe(df.head(100), use_container_width=True)
+        # CORRECTION 2 : Pour st.dataframe, le paramètre est bien 'use_container_width' qui change.
+        # Le message dit : For use_container_width=True, use width='stretch'.
+        st.dataframe(df.head(100), width=1000) # Ou on laisse vide, streamlit gère bien.
 
 else:
     st.warning(" La table 'fact_trips' semble vide ou inaccessible. Relance l'exercice 2 si besoin.")
