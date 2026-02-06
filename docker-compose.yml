@@ -1,4 +1,5 @@
 services:
+  # --- SPARK CLUSTER ---
   spark-master:
     build: ./docker
     container_name: spark-master
@@ -10,8 +11,8 @@ services:
       - SPARK_SSL_ENABLED=no
       - SPARK_MASTER_URL=spark://spark-master:7077
     ports:
-      - "8081:8080" # Web UI
-      - "7077:7077" # Spark master port
+      - "8081:8080"
+      - "7077:7077"
     networks:
       - spark-network
     healthcheck:
@@ -28,7 +29,7 @@ services:
     environment:
       - SPARK_MODE=worker
       - SPARK_MASTER_URL=spark://spark-master:7077
-      - SPARK_WORKER_MEMORY=1600m # Ajusté (laisse 400Mo à l'OS Docker)
+      - SPARK_WORKER_MEMORY=1600m
       - SPARK_WORKER_CORES=2
       - SPARK_RPC_AUTHENTICATION_ENABLED=no
       - SPARK_RPC_ENCRYPTION_ENABLED=no
@@ -49,7 +50,7 @@ services:
     environment:
       - SPARK_MODE=worker
       - SPARK_MASTER_URL=spark://spark-master:7077
-      - SPARK_WORKER_MEMORY=1600m # Ajusté
+      - SPARK_WORKER_MEMORY=1600m
       - SPARK_WORKER_CORES=2
       - SPARK_RPC_AUTHENTICATION_ENABLED=no
       - SPARK_RPC_ENCRYPTION_ENABLED=no
@@ -62,17 +63,16 @@ services:
     networks:
       - spark-network
 
-  # MinIO (S3-compatible storage)
+  # --- STOCKAGE (MinIO) ---
   minio:
     hostname: minio
     container_name: minio
-    # J'ai remis ta version. Si Docker ne la trouve pas, remplace par : minio/minio:latest
     image: minio/minio:RELEASE.2025-09-07T16-13-09Z
     ports:
       - '9000:9000'
       - '9001:9001'
     volumes:
-      - ./minio-data:/data # Indispensable pour garder tes buckets après redémarrage
+      - ./minio-data:/data
     environment:
       MINIO_ROOT_USER: minio
       MINIO_ROOT_PASSWORD: minio123
@@ -80,7 +80,7 @@ services:
     networks:
       - spark-network
 
-  # PostgreSQL (Indispensable pour l'Exercice 3 - Data Warehouse)
+  # --- DATA WAREHOUSE (PostgreSQL) ---
   postgres:
     image: postgres:15
     container_name: postgres-dw
@@ -94,6 +94,76 @@ services:
       - ./postgres-data:/var/lib/postgresql/data
     networks:
       - spark-network
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U admin -d taxi_warehouse"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  # --- ORCHESTRATEUR (Airflow) ---
+  airflow-postgres:
+    image: postgres:15
+    container_name: airflow-postgres
+    environment:
+      - POSTGRES_USER=airflow
+      - POSTGRES_PASSWORD=airflow
+      - POSTGRES_DB=airflow
+    volumes:
+      - airflow-db-data:/var/lib/postgresql/data
+    networks:
+      - spark-network
+
+  airflow-webserver:
+    image: apache/airflow:2.8.1-python3.10
+    container_name: airflow-webserver
+    command: webserver
+    ports:
+      - "8080:8080"
+    environment:
+      - AIRFLOW__CORE__EXECUTOR=LocalExecutor
+      - AIRFLOW__DATABASE__SQL_ALCHEMY_CONN=postgresql+psycopg2://airflow:airflow@airflow-postgres/airflow
+      - AIRFLOW__CORE__FERNET_KEY=46BKJoQYlPPOexq0OhDZnIlNepKFf87WFwLbfzqDDho=
+      - AIRFLOW__CORE__LOAD_EXAMPLES=False
+      - AIRFLOW_CONN_POSTGRES_DW=postgres://admin:password@postgres:5432/taxi_warehouse
+      - AIRFLOW__WEBSERVER__SECRET_KEY=cle_secrete_fixe_pour_le_projet_big_data
+    volumes:
+      # Volumes simples (relatifs)
+      - ./ex06_airflow/dags:/opt/airflow/dags
+      - ./ex06_airflow/logs:/opt/airflow/logs
+      - ./ex06_airflow/plugins:/opt/airflow/plugins
+    depends_on:
+      - airflow-postgres
+    networks:
+      - spark-network
+    healthcheck:
+      test: ["CMD", "curl", "--fail", "http://localhost:8080/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 5
+
+  airflow-scheduler:
+    image: apache/airflow:2.8.1-python3.10
+    container_name: airflow-scheduler
+    command: scheduler
+    environment:
+      - AIRFLOW__CORE__EXECUTOR=LocalExecutor
+      - AIRFLOW__DATABASE__SQL_ALCHEMY_CONN=postgresql+psycopg2://airflow:airflow@airflow-postgres/airflow
+      - AIRFLOW__CORE__FERNET_KEY=46BKJoQYlPPOexq0OhDZnIlNepKFf87WFwLbfzqDDho=
+      - AIRFLOW__CORE__LOAD_EXAMPLES=False
+      - AIRFLOW_CONN_POSTGRES_DW=postgres://admin:password@postgres:5432/taxi_warehouse
+      - AIRFLOW__WEBSERVER__SECRET_KEY=cle_secrete_fixe_pour_le_projet_big_data
+    volumes:
+      # Volumes simples (relatifs)
+      - ./ex06_airflow/dags:/opt/airflow/dags
+      - ./ex06_airflow/logs:/opt/airflow/logs
+      - ./ex06_airflow/plugins:/opt/airflow/plugins
+    depends_on:
+      - airflow-postgres
+    networks:
+      - spark-network
+
+volumes:
+  airflow-db-data:
 
 networks:
   spark-network:
