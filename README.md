@@ -148,9 +148,11 @@ L'analyse visuelle des donnees a ete realisee en connectant un outil de BI
 
 Localisation des resultats :
 Les captures d'ecran du tableau de bord (Dashboard) attestant de la realisation
-de l'exercice 4 sont disponibles dans le dossier suivant du projet :
+de l'exercice 4 sont les suivants:
 
--> reports/figures/
+<img width="1855" height="919" alt="Capture d&#39;écran 2026-02-06 211557" src="https://github.com/user-attachments/assets/488658ae-2426-4d57-852a-60f63483dff1" />
+<img width="1857" height="915" alt="Capture d&#39;écran 2026-02-06 211617" src="https://github.com/user-attachments/assets/6908b3dc-1363-4530-9a07-f465f147f5e6" />
+
 
 Contenu du Dashboard :
 Ce tableau de bord presente les indicateurs cles de performance (KPI) suivants :
